@@ -797,14 +797,14 @@
       if(!path) return;
 
       const SVG_W = 900, SVG_H = 160;
-      const POINTS = 56;
+      const POINTS = 60;
+      const gap = SVG_W / (POINTS - 1);
       const baseY = SVG_H / 2;
       const amp = 44; // vertical amplitude
-      const speed = 0.008; // animation speed
+      const speedPx = 80; // horizontal scroll speed in px/sec (steady)
 
-      const points = new Array(POINTS).fill(0).map((_,i)=>{
-        return [i * (SVG_W/(POINTS-1)), baseY];
-      });
+      const points = [];
+      for(let i=0;i<POINTS;i++) points.push([i * gap, baseY]);
 
       function catmullRom2bezier(points){
         let d = '';
@@ -824,36 +824,51 @@
         return d;
       }
 
-      // simple evolving offsets to produce smooth pseudo-random motion
-      let t = Math.random() * 1000;
-      const phases = new Array(4).fill(0).map(()=>Math.random()*10);
+      // smooth vertical motion: layered sines with seeded phases
+      const phases = new Array(3).fill(0).map(()=>Math.random()*10);
+      const t0 = Math.random()*1000;
 
-      function update(){
-        t += speed;
-        // update each point's y with a sum of low-frequency sines for smooth randomness
-        for(let i=0;i<POINTS;i++){
-          const x = points[i][0];
-          const nx = i / POINTS;
-          let y = baseY;
-          y += Math.sin((nx*6) + t*1.2 + phases[0]) * (amp * 0.45);
-          y += Math.sin((nx*12) + t*0.6 + phases[1]) * (amp * 0.22);
-          y += Math.sin((nx*3) + t*1.8 + phases[2]) * (amp * 0.12);
-          // add a small drifting random component
-          y += (Math.sin(t*0.3 + nx*10 + phases[3]) * (amp*0.06));
-          points[i][1] = y;
+      function computeY(nx, t){
+        let y = baseY;
+        y += Math.sin((nx*6) + t*1.2 + phases[0]) * (amp * 0.45);
+        y += Math.sin((nx*12) + t*0.6 + phases[1]) * (amp * 0.22);
+        y += Math.sin((nx*3) + t*1.8 + phases[2]) * (amp * 0.12);
+        return y;
+      }
+
+      let lastTime = null;
+
+      function animate(ts){
+        if(!lastTime) lastTime = ts;
+        const dt = (ts - lastTime) / 1000;
+        lastTime = ts;
+        const t = ts * 0.001 + t0;
+
+        // shift all points left by steady amount
+        const shift = speedPx * dt;
+        for(const p of points) p[0] -= shift;
+
+        // when the leftmost point goes past -gap, remove and append at right
+        while(points.length && points[0][0] < -gap){
+          points.shift();
+          const lastX = points[points.length-1][0];
+          const newX = lastX + gap;
+          const nx = newX / SVG_W;
+          points.push([newX, computeY(nx, t)]);
         }
+
+        // update vertical positions smoothly based on each point's normalized x
+        for(let i=0;i<points.length;i++){
+          const nx = (points[i][0]) / SVG_W;
+          points[i][1] = computeY(nx, t);
+        }
+
         const d = catmullRom2bezier(points);
         path.setAttribute('d', d);
-        requestAnimationFrame(update);
+        requestAnimationFrame(animate);
       }
 
-      // size the SVG path to match viewBox scaling if container resizes
-      function onResize(){
-        // no-op for now; path is in viewBox coords (900x160)
-      }
-
-      requestAnimationFrame(update);
-      window.addEventListener('resize', onResize);
+      requestAnimationFrame(animate);
     })();
   </script>
 </main>
