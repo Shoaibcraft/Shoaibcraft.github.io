@@ -290,11 +290,14 @@
   .scope-dot{ width:7px;height:7px;border-radius:50%; background:var(--accent2); display:inline-block; margin-right:6px; }
   .scope svg{ display:block; width:100%; height:auto; }
   .wave-path{
-    stroke:var(--accent);
     stroke-width:2;
     fill:none;
     stroke-linecap:round;
+    stroke-linejoin:round;
   }
+  .wave-a{ stroke:var(--accent); stroke-width:2; }
+  .wave-b{ stroke:var(--accent2); stroke-width:1.9; opacity:0.95; }
+  .wave-c{ stroke:#ff7ab6; stroke-width:1.8; opacity:0.92; }
   @keyframes draw{ to{ stroke-dashoffset:0; } }
 
   /* ============ REVEAL ============ */
@@ -554,9 +557,9 @@
       <div class="scope reveal">
         <div class="scope-head"><span><span class="scope-dot"></span>CH1 — SIGNAL.LIVE</span><span>2.4V/DIV · 1mS/DIV</span></div>
         <svg viewBox="0 0 900 160" preserveAspectRatio="none" aria-hidden="true">
-          <path class="wave-path" d="M0,80 L60,80 L90,20 L120,140 L150,80 L280,80
-            C 300,80 300,20 320,20 C 340,20 340,140 360,140 C 380,140 380,80 400,80
-            L520,80 L545,50 L570,110 L595,80 L900,80" />
+          <path class="wave-path wave-a" d="" />
+          <path class="wave-path wave-b" d="" />
+          <path class="wave-path wave-c" d="" />
         </svg>
       </div>
     </div>
@@ -793,8 +796,10 @@
 
   <script>
     (function(){
-      const path = document.querySelector('.wave-path');
-      if(!path) return;
+      const pa = document.querySelector('.wave-a');
+      const pb = document.querySelector('.wave-b');
+      const pc = document.querySelector('.wave-c');
+      if(!pa || !pb || !pc) return;
 
       const SVG_W = 900, SVG_H = 160;
       const POINTS = 72;
@@ -803,111 +808,118 @@
       const amp = 46; // vertical amplitude (px)
       const speedPx = 110; // horizontal scroll speed in px/sec (steady)
 
-      // buffer of recorded samples (x,y). We'll only compute y for new samples so
-      // the trace is a recorded signal that moves left naturally.
-      const points = [];
-      for(let i=0;i<POINTS;i++) points.push([i * gap, baseY + (Math.random()-0.5)*2]);
+      // X positions buffer (shared for all phases)
+      const xs = new Array(POINTS).fill(0).map((_,i)=> i * gap);
 
-      function catmullRom2bezier(points){
+      // per-phase Y sample buffers
+      const ys = [[],[],[]];
+      for(let p=0;p<3;p++){
+        for(let i=0;i<POINTS;i++) ys[p].push(baseY + (Math.random()-0.5)*2);
+      }
+
+      function catmullRom2bezierFromXY(xs, ys){
         let d = '';
-        if(points.length < 2) return d;
-        d += `M ${points[0][0]},${points[0][1]} `;
-        for(let i=0;i<points.length-1;i++){
-          const p0 = i>0 ? points[i-1] : points[i];
-          const p1 = points[i];
-          const p2 = points[i+1];
-          const p3 = (i+2<points.length) ? points[i+2] : p2;
-          const cp1x = p1[0] + (p2[0]-p0[0]) / 6;
-          const cp1y = p1[1] + (p2[1]-p0[1]) / 6;
-          const cp2x = p2[0] - (p3[0]-p1[0]) / 6;
-          const cp2y = p2[1] - (p3[1]-p1[1]) / 6;
-          d += `C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2[0]},${p2[1]} `;
+        if(xs.length < 2) return d;
+        d += `M ${xs[0]},${ys[0]} `;
+        for(let i=0;i<xs.length-1;i++){
+          const x0 = i>0 ? xs[i-1] : xs[i];
+          const y0 = i>0 ? ys[i-1] : ys[i];
+          const x1 = xs[i];
+          const y1 = ys[i];
+          const x2 = xs[i+1];
+          const y2 = ys[i+1];
+          const x3 = (i+2<xs.length) ? xs[i+2] : x2;
+          const y3 = (i+2<ys.length) ? ys[i+2] : y2;
+          const cp1x = x1 + (x2-x0) / 6;
+          const cp1y = y1 + (y2-y0) / 6;
+          const cp2x = x2 - (x3-x1) / 6;
+          const cp2y = y2 - (y3-y1) / 6;
+          d += `C ${cp1x},${cp1y} ${cp2x},${cp2y} ${x2},${y2} `;
         }
         return d;
       }
 
-      // seeded phases for coherent layered components
+      // phases for fundamental/harmonic components
       const phases = new Array(3).fill(0).map(()=>Math.random()*10);
       const t0 = Math.random()*1000;
+      const phaseOffsets = [0, -2*Math.PI/3, 2*Math.PI/3];
 
-      // transients (spikes) that start at a time and decay
+      // transients can target a single phase or all
       const transients = [];
-      const transientChancePerSec = 0.18; // how often transient events start
+      const transientChancePerSec = 0.14;
 
-      function maybeStartTransient(t){
-        if(Math.random() < transientChancePerSec * 0.016){ // approx per-frame probability
-          transients.push({
-            start: t,
-            amp: (Math.random()*1.6 + 0.6) * (Math.random()>0.5?1:-1) * amp * 0.9,
-            decay: 0.12 + Math.random()*0.6,
-            freq: 20 + Math.random()*120
-          });
-        }
+      function startTransient(t){
+        if(Math.random() < transientChancePerSec * 0.016) return; // small chance
+        const target = Math.random()<0.6 ? Math.floor(Math.random()*3) : 'all';
+        transients.push({
+          start: t,
+          target,
+          amp: (Math.random()*1.2 + 0.6) * amp * (Math.random()>0.5?1:-1),
+          decay: 0.06 + Math.random()*0.5,
+          freq: 30 + Math.random()*120
+        });
       }
 
-      function transientAt(t){
-        // sum transient contributions at time t
+      function transientAt(t, phaseIdx){
         let s = 0;
         for(let i=transients.length-1;i>=0;i--){
           const tr = transients[i];
           const dt = t - tr.start;
           if(dt < 0) continue;
           const env = Math.exp(-dt / tr.decay);
-          s += tr.amp * env * Math.cos(dt * tr.freq);
+          if(tr.target === 'all' || tr.target === phaseIdx){
+            s += tr.amp * env * Math.cos(dt * tr.freq);
+          }
           if(env < 0.01) transients.splice(i,1);
         }
         return s;
       }
 
       function fractalNoise(x, t){
-        // layered sinusoids to simulate broadband noise
         return (Math.sin(x*12 + t*6) * 0.6 + Math.sin(x*37 + t*12)*0.25 + Math.sin(x*91 + t*26)*0.12);
       }
 
-      // compute a new sample value at time t
-      function sampleValue(t){
-        const slow = Math.sin(t*0.5 + phases[0]) * (amp * 0.35);
-        const mid = Math.sin(t*2.2 + phases[1]) * (amp * 0.18);
-        const fast = Math.sin(t*8.5 + phases[2]) * (amp * 0.06);
-        const noise = fractalNoise(t*0.7, t) * (amp * 0.06);
-        const trans = transientAt(t);
-        return baseY + slow + mid + fast + noise + trans;
+      function sampleValue(phaseIdx, phaseOffset, t){
+        const fundamental = Math.sin(t*2.2 + phaseOffset + phases[0]) * (amp * 0.38);
+        const second = Math.sin(t*4.6 + phaseOffset + phases[1]) * (amp * 0.08);
+        const third = Math.sin(t*7.9 + phaseOffset + phases[2]) * (amp * 0.04);
+        const noise = fractalNoise(t*0.7, t) * (amp * 0.04);
+        const trans = transientAt(t, phaseIdx);
+        return baseY + fundamental + second + third + noise + trans;
       }
 
       let lastTime = null;
-
       function animate(ts){
         if(!lastTime) lastTime = ts;
         const dt = (ts - lastTime) / 1000;
         lastTime = ts;
         const t = ts * 0.001 + t0;
 
-        // shift points left by steady amount
+        // shift x positions left steadily
         const shift = speedPx * dt;
-        for(const p of points) p[0] -= shift;
+        for(let i=0;i<xs.length;i++) xs[i] -= shift;
 
-        // start occasional transients (probability scaled by dt)
+        // occasionally seed transients (low probability per frame)
         if(Math.random() < transientChancePerSec * dt) {
-          transients.push({
-            start: t,
-            amp: (Math.random()*1.6 + 0.6) * (Math.random()>0.5?1:-1) * amp * 0.9,
-            decay: 0.08 + Math.random()*0.6,
-            freq: 30 + Math.random()*140
-          });
+          const target = Math.random()<0.7 ? Math.floor(Math.random()*3) : 'all';
+          transients.push({ start: t, target, amp: (Math.random()*1.2+0.6)*amp*(Math.random()>0.5?1:-1), decay: 0.06+Math.random()*0.6, freq: 40+Math.random()*140 });
         }
 
-        // remove left points that moved off, and append new samples at right
-        while(points.length && points[0][0] < -gap){
-          points.shift();
-          const lastX = points[points.length-1][0];
+        // when leftmost xs drops off, shift arrays and append new samples at right
+        while(xs.length && xs[0] < -gap){
+          xs.shift();
+          for(let p=0;p<3;p++) ys[p].shift();
+          const lastX = xs[xs.length-1];
           const newX = lastX + gap;
-          const newSample = sampleValue(t);
-          points.push([newX, newSample]);
+          xs.push(newX);
+          for(let p=0;p<3;p++) ys[p].push(sampleValue(p, phaseOffsets[p], t));
         }
 
-        // convert to smooth path
-        const d = catmullRom2bezier(points);
-        path.setAttribute('d', d);
+        // build paths and set attributes
+        pa.setAttribute('d', catmullRom2bezierFromXY(xs, ys[0]));
+        pb.setAttribute('d', catmullRom2bezierFromXY(xs, ys[1]));
+        pc.setAttribute('d', catmullRom2bezierFromXY(xs, ys[2]));
+
         requestAnimationFrame(animate);
       }
 
