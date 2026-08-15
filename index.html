@@ -294,9 +294,6 @@
     stroke-width:2;
     fill:none;
     stroke-linecap:round;
-    stroke-dasharray:900;
-    stroke-dashoffset:900;
-    animation: draw 2.4s ease forwards 0.3s;
   }
   @keyframes draw{ to{ stroke-dashoffset:0; } }
 
@@ -794,6 +791,71 @@
     </div>
   </section>
 
+  <script>
+    (function(){
+      const path = document.querySelector('.wave-path');
+      if(!path) return;
+
+      const SVG_W = 900, SVG_H = 160;
+      const POINTS = 56;
+      const baseY = SVG_H / 2;
+      const amp = 44; // vertical amplitude
+      const speed = 0.008; // animation speed
+
+      const points = new Array(POINTS).fill(0).map((_,i)=>{
+        return [i * (SVG_W/(POINTS-1)), baseY];
+      });
+
+      function catmullRom2bezier(points){
+        let d = '';
+        if(points.length < 2) return d;
+        d += `M ${points[0][0]},${points[0][1]} `;
+        for(let i=0;i<points.length-1;i++){
+          const p0 = i>0 ? points[i-1] : points[i];
+          const p1 = points[i];
+          const p2 = points[i+1];
+          const p3 = (i+2<points.length) ? points[i+2] : p2;
+          const cp1x = p1[0] + (p2[0]-p0[0]) / 6;
+          const cp1y = p1[1] + (p2[1]-p0[1]) / 6;
+          const cp2x = p2[0] - (p3[0]-p1[0]) / 6;
+          const cp2y = p2[1] - (p3[1]-p1[1]) / 6;
+          d += `C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2[0]},${p2[1]} `;
+        }
+        return d;
+      }
+
+      // simple evolving offsets to produce smooth pseudo-random motion
+      let t = Math.random() * 1000;
+      const phases = new Array(4).fill(0).map(()=>Math.random()*10);
+
+      function update(){
+        t += speed;
+        // update each point's y with a sum of low-frequency sines for smooth randomness
+        for(let i=0;i<POINTS;i++){
+          const x = points[i][0];
+          const nx = i / POINTS;
+          let y = baseY;
+          y += Math.sin((nx*6) + t*1.2 + phases[0]) * (amp * 0.45);
+          y += Math.sin((nx*12) + t*0.6 + phases[1]) * (amp * 0.22);
+          y += Math.sin((nx*3) + t*1.8 + phases[2]) * (amp * 0.12);
+          // add a small drifting random component
+          y += (Math.sin(t*0.3 + nx*10 + phases[3]) * (amp*0.06));
+          points[i][1] = y;
+        }
+        const d = catmullRom2bezier(points);
+        path.setAttribute('d', d);
+        requestAnimationFrame(update);
+      }
+
+      // size the SVG path to match viewBox scaling if container resizes
+      function onResize(){
+        // no-op for now; path is in viewBox coords (900x160)
+      }
+
+      requestAnimationFrame(update);
+      window.addEventListener('resize', onResize);
+    })();
+  </script>
 </main>
 
 <footer>
