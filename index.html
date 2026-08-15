@@ -557,9 +557,36 @@
       <div class="scope reveal">
         <div class="scope-head"><span><span class="scope-dot"></span>CH1 — SIGNAL.LIVE</span><span>2.4V/DIV · 1mS/DIV</span></div>
         <svg viewBox="0 0 900 160" preserveAspectRatio="none" aria-hidden="true">
-          <path class="wave-path wave-a" d="" />
-          <path class="wave-path wave-b" d="" />
-          <path class="wave-path wave-c" d="" />
+          <defs>
+            <linearGradient id="gradA" x1="0%" x2="100%">
+              <stop offset="0%" stop-color="#ffd07f" />
+              <stop offset="100%" stop-color="#ff9a00" />
+            </linearGradient>
+            <linearGradient id="gradB" x1="0%" x2="100%">
+              <stop offset="0%" stop-color="#4fd6ff" />
+              <stop offset="100%" stop-color="#00b0ff" />
+            </linearGradient>
+            <linearGradient id="gradC" x1="0%" x2="100%">
+              <stop offset="0%" stop-color="#ff9ad1" />
+              <stop offset="100%" stop-color="#ff5aa8" />
+            </linearGradient>
+            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+              <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+
+          <path class="wave-path wave-a" stroke="url(#gradA)" filter="url(#glow)" d="" />
+          <path class="wave-path wave-b" stroke="url(#gradB)" d="" />
+          <path class="wave-path wave-c" stroke="url(#gradC)" d="" />
+
+          <!-- moving tracer dots -->
+          <circle id="waveDotA" r="4" fill="#ffd07f" filter="url(#glow)" />
+          <circle id="waveDotB" r="3.2" fill="#4fd6ff" opacity="0.95" />
+          <circle id="waveDotC" r="3.6" fill="#ff5aa8" opacity="0.96" filter="url(#glow)" />
         </svg>
       </div>
     </div>
@@ -799,6 +826,9 @@
       const pa = document.querySelector('.wave-a');
       const pb = document.querySelector('.wave-b');
       const pc = document.querySelector('.wave-c');
+      const dotA = document.getElementById('waveDotA');
+      const dotB = document.getElementById('waveDotB');
+      const dotC = document.getElementById('waveDotC');
       if(!pa || !pb || !pc) return;
 
       const SVG_W = 900, SVG_H = 160;
@@ -919,6 +949,12 @@
         pa.setAttribute('d', catmullRom2bezierFromXY(xs, ys[0]));
         pb.setAttribute('d', catmullRom2bezierFromXY(xs, ys[1]));
         pc.setAttribute('d', catmullRom2bezierFromXY(xs, ys[2]));
+
+        // update tracer dots to sit on the newest sample (rightmost)
+        const lastIdx = xs.length - 1;
+        if(dotA){ dotA.setAttribute('cx', xs[lastIdx]); dotA.setAttribute('cy', ys[0][lastIdx]); }
+        if(dotB){ dotB.setAttribute('cx', xs[lastIdx]); dotB.setAttribute('cy', ys[1][lastIdx]); }
+        if(dotC){ dotC.setAttribute('cx', xs[lastIdx]); dotC.setAttribute('cy', ys[2][lastIdx]); }
 
         requestAnimationFrame(animate);
       }
